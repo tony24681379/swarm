@@ -1259,10 +1259,24 @@ func (e *Engine) TagImage(IDOrName string, repo string, tag string, force bool) 
 	return e.RefreshImages()
 }
 
-// CheckpointContainer checkpoint container
-func (e *Engine) CheckpointContainer(containerID string, options types.CriuConfig) error{
+// CheckpointCreate checkpoint container
+func (e *Engine) CheckpointCreate(containerID string, options types.CriuConfig) error {
 	// send restore request
-	err := e.apiClient.ContainerCheckpoint(context.TODO(), containerID, options)
+	err := e.apiClient.CheckpointCreate(context.TODO(), containerID, options)
+	e.CheckConnectionErr(err)
+	if err != nil {
+		return err
+	}
+
+	// refresh container
+	_, err = e.refreshContainer(containerID, true)
+	return err
+}
+
+// CheckpointDelete delete container checkpoint
+func (e *Engine) CheckpointDelete(containerID string, imgDir string) error {
+	// send restore request
+	err := e.apiClient.CheckpointDelete(context.TODO(), containerID, imgDir)
 	e.CheckConnectionErr(err)
 	if err != nil {
 		return err
@@ -1274,7 +1288,7 @@ func (e *Engine) CheckpointContainer(containerID string, options types.CriuConfi
 }
 
 // RestoreContainer restore container
-func (e *Engine) RestoreContainer(containerID string, options types.CriuConfig, forceRestore bool) error{
+func (e *Engine) RestoreContainer(containerID string, options types.CriuConfig, forceRestore bool) error {
 	// send restore request
 	err := e.apiClient.ContainerRestore(context.TODO(), containerID, options, forceRestore)
 	e.CheckConnectionErr(err)
@@ -1288,7 +1302,7 @@ func (e *Engine) RestoreContainer(containerID string, options types.CriuConfig, 
 }
 
 //WaitContainer wait container
-func (e *Engine) WaitContainer(containerID string) error{
+func (e *Engine) WaitContainer(containerID string) error {
 	_, err := e.apiClient.ContainerWait(context.TODO(), containerID)
 	if err != nil {
 		return err

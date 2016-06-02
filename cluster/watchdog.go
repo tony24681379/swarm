@@ -115,7 +115,7 @@ func (w *Watchdog) restoreContainer(c *Container, newContainer *Container) {
 		}
 		criuOpts := types.CriuConfig{
 			ImagesDirectory: filepath.Join(newContainer.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(version), "criu.image"),
-			WorkDirectory:   filepath.Join(newContainer.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(version), "criu.work"),
+			WorkDirectory:   filepath.Join(newContainer.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(version), "criu.image", "criu.work"),
 		}
 		if err = w.cluster.RestoreContainer(newContainer, criuOpts, true); err != nil {
 			log.Errorf("Failed to restore rescheduled container %s version %d: %v", newContainer.ID, version, err)

@@ -100,9 +100,12 @@ type Cluster interface {
 	// Tag an image
 	TagImage(IDOrName string, repo string, tag string, force bool) error
 
-	//Checkpoint a Container
-	CheckpointContainer(container *Container, options types.CriuConfig) error
+	//Checkpoint a container
+	CheckpointCreate(container *Container, options types.CriuConfig) error
 
-	// Restore a Container
+	//Delete a Container checkpoint
+	CheckpointDelete(container *Container, imgDir string) error
+
+	// Restore a container
 	RestoreContainer(container *Container, options types.CriuConfig, forceRestore bool) error
 }

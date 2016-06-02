@@ -1367,10 +1367,10 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 
 	checkpointOpts := apitypes.CriuConfig{
 		ImagesDirectory: filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image"),
-		WorkDirectory:   filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.work"),
+		WorkDirectory:   filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image", "criu.work"),
 		LeaveRunning:    true,
 	}
-	err := c.cluster.CheckpointContainer(container, checkpointOpts)
+	err := c.cluster.CheckpointCreate(container, checkpointOpts)
 	if err != nil {
 		log.Errorf("Error to checkpoint %s, %s", container.ID, err)
 		return
@@ -1401,7 +1401,7 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 
 	restoreOpts := apitypes.CriuConfig{
 		ImagesDirectory: filepath.Join(newContainer.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image"),
-		WorkDirectory:   filepath.Join(newContainer.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.work"),
+		WorkDirectory:   filepath.Join(newContainer.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image", "criu.work"),
 	}
 	err = c.cluster.RestoreContainer(newContainer, restoreOpts, true)
 	if err != nil {

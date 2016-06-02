@@ -116,20 +116,30 @@ func (c *Container) CheckpointContainerTicker(checkpointTime time.Duration) {
 		for {
 			select {
 			case <-ticker.C:
-				c.CheckpointTicker.Checkpointed[c.CheckpointTicker.Version] = false
+				version := c.CheckpointTicker.Version
+				keepVersion := 2
+				c.CheckpointTicker.Checkpointed[version] = false
+				imgDir := filepath.Join(c.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(version), "criu.image")
+
 				criuOpts := types.CriuConfig{
-					ImagesDirectory: filepath.Join(c.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(c.CheckpointTicker.Version), "criu.image"),
-					WorkDirectory:   filepath.Join(c.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(c.CheckpointTicker.Version), "criu.work"),
+					ImagesDirectory: imgDir,
+					WorkDirectory:   filepath.Join(imgDir, "criu.work"),
 					LeaveRunning:    true,
 				}
 
-				err := c.Engine.CheckpointContainer(c.ID, criuOpts)
+				err := c.Engine.CheckpointCreate(c.ID, criuOpts)
 				if err != nil {
-					log.Errorf("Error to checkpoint %s, %s", c.ID, err)
+					log.Errorf("Error to create checkpoint %s, %s", c.ID, err)
 				} else {
 					log.Infof("checkpoint container %s,  version %d", c.ID, c.CheckpointTicker.Version)
 				}
-				c.CheckpointTicker.Checkpointed[c.CheckpointTicker.Version] = true
+				c.CheckpointTicker.Checkpointed[version] = true
+				if version >= keepVersion {
+					err := c.Engine.CheckpointDelete(c.ID, filepath.Join(c.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(version-keepVersion)))
+					if err != nil {
+						log.Errorf("Error to delete checkpoint %s version %d, %s", c.ID, version-keepVersion, err)
+					}
+				}
 				c.CheckpointTicker.Version++
 			case <-stopCh:
 				ticker.Stop()

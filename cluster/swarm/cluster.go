@@ -978,9 +978,14 @@ func (c *Cluster) TagImage(IDOrName string, repo string, tag string, force bool)
 	return err
 }
 
-// CheckpointContainer checkpoint a container
-func (c *Cluster) CheckpointContainer(container *cluster.Container, options types.CriuConfig) error {
-	return container.Engine.CheckpointContainer(container.ID, options)
+// CheckpointCreate create a container checkpoint
+func (c *Cluster) CheckpointCreate(container *cluster.Container, options types.CriuConfig) error {
+	return container.Engine.CheckpointCreate(container.ID, options)
+}
+
+// CheckpointDelete delete a container checkpoint
+func (c *Cluster) CheckpointDelete(container *cluster.Container, imgDir string) error {
+	return container.Engine.CheckpointDelete(container.ID, imgDir)
 }
 
 // RestoreContainer restore a container

@@ -32,14 +32,19 @@ func (client *NopClient) ClientVersion() string {
 	return ""
 }
 
+// CheckpointCreate checkpoints a running container
+func (client *NopClient) CheckpointCreate(ctx context.Context, containerID string, options types.CriuConfig) error {
+	return errNoEngine
+}
+
+// CheckpointDelete deletes a checkpoint from the given container with the given name
+func (client *NopClient) CheckpointDelete(ctx context.Context, container string, imgDir string) error {
+	return errNoEngine
+}
+
 // ContainerAttach attaches a connection to a container in the server
 func (client *NopClient) ContainerAttach(ctx context.Context, options types.ContainerAttachOptions) (types.HijackedResponse, error) {
 	return types.HijackedResponse{}, errNoEngine
-}
-
-// ContainerCheckpoint checkpoints a running container
-func (client *NopClient) ContainerCheckpoint(ctx context.Context, containerID string, options types.CriuConfig) error {
-	return errNoEngine
 }
 
 // ContainerCommit applies changes into a container and creates a new tagged image

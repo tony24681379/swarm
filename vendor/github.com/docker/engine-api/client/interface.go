@@ -15,10 +15,11 @@ import (
 // APIClient is an interface that clients that talk with a docker server must implement.
 type APIClient interface {
 	ClientVersion() string
+	CheckpointCreate(ctx context.Context, containerID string, options types.CriuConfig) error
+	CheckpointDelete(ctx context.Context, container string, imgDir string) error
 	ContainerAttach(ctx context.Context, options types.ContainerAttachOptions) (types.HijackedResponse, error)
 	ContainerCommit(ctx context.Context, options types.ContainerCommitOptions) (types.ContainerCommitResponse, error)
 	ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, containerName string) (types.ContainerCreateResponse, error)
-	ContainerCheckpoint(ctx context.Context, containerID string, options types.CriuConfig) error
 	ContainerDiff(ctx context.Context, ontainerID string) ([]types.ContainerChange, error)
 	ContainerExecAttach(ctx context.Context, execID string, config types.ExecConfig) (types.HijackedResponse, error)
 	ContainerExecCreate(ctx context.Context, config types.ExecConfig) (types.ContainerExecCreateResponse, error)
