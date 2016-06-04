@@ -603,6 +603,10 @@ func deleteContainers(c *context, w http.ResponseWriter, r *http.Request) {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if err := c.cluster.CheckpointDelete(container, filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID)); err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1093,6 +1097,16 @@ func proxyContainerAndForceRefresh(c *context, w http.ResponseWriter, r *http.Re
 		container.Refresh()
 	}
 
+	if container.Info.State.Running {
+		if checkpointTime, err := container.Config.HasCheckpointTimePolicy(); err != nil {
+			log.Errorf("Fails to set container %s checkpoint time, %s", container.ID, err)
+		} else if checkpointTime > 0 {
+			if container.CheckpointTicker.Ticker == false {
+				container.CheckpointContainerTicker(checkpointTime)
+			}
+		}
+	}
+
 	err = proxyAsync(container.Engine, w, r, cb)
 	container.Engine.CheckConnectionErr(err)
 	if err != nil {
@@ -1370,42 +1384,60 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		WorkDirectory:   filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image", "criu.work"),
 		LeaveRunning:    true,
 	}
-	err := c.cluster.CheckpointCreate(container, checkpointOpts)
-	if err != nil {
-		log.Errorf("Error to checkpoint %s, %s", container.ID, err)
+	if err := c.cluster.CheckpointCreate(container, checkpointOpts); err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	config := container.Config
-	for _, e := range filters.EnvVariables {
-		config.Config.Env = append(config.Config.Env, e)
-	}
-	for k, v := range filters.Labels {
-		config.Config.Labels[k] = v
-	}
+
+	migrateConfig := buildContainerConfig(containertypes.Config{
+		Labels: filters.Labels,
+		Env:    filters.EnvVariables,
+	})
 
 	engineName := container.Engine.Name
 	config.AddConstraint("node!=" + engineName)
 
-	err = c.cluster.RemoveContainer(container, true, true)
-	if err != nil {
-		log.Errorf("Error to delete %s, %s", container.ID, err)
+	for _, affinity := range migrateConfig.Affinities {
+		config.AddAffinity(affinity)
+	}
+	for _, constraint := range migrateConfig.Constraints {
+		config.AddConstraint(constraint)
+	}
+
+	if err := c.cluster.RemoveContainer(container, true, true); err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	newContainer, err := c.cluster.CreateContainer(config, containerName, nil)
-	if err != nil {
-		log.Errorf("Error to create %s, %s", newContainer.ID, err)
-		return
+	var restoreContainer *cluster.Container
+	retryCreateTimes := 3
+	for i := 0; i < retryCreateTimes; i++ {
+		if newContainer, err := c.cluster.CreateContainer(config, containerName, nil); err != nil {
+			if i < retryCreateTimes-1 {
+				continue
+			} else {
+				httpError(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			restoreContainer = newContainer
+			break
+		}
 	}
 
 	restoreOpts := apitypes.CriuConfig{
-		ImagesDirectory: filepath.Join(newContainer.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image"),
-		WorkDirectory:   filepath.Join(newContainer.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image", "criu.work"),
+		ImagesDirectory: filepath.Join(restoreContainer.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image"),
+		WorkDirectory:   filepath.Join(restoreContainer.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image", "criu.work"),
 	}
-	err = c.cluster.RestoreContainer(newContainer, restoreOpts, true)
-	if err != nil {
-		log.Errorf("Error to checkpoint %s, %s", newContainer.ID, err)
+	if err := c.cluster.RestoreContainer(restoreContainer, restoreOpts, true); err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := c.cluster.CheckpointDelete(container, filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID)); err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 }

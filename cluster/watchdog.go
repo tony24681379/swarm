@@ -93,12 +93,17 @@ func (w *Watchdog) rescheduleContainers(e *Engine) {
 						log.Errorf("Failed to start rescheduled container %s: %v", newContainer.ID, err)
 					}
 				} else if c.Config.HasReschedulePolicy("restore") {
-					w.restoreContainer(c, newContainer)
-					if checkpointTime, err := c.Config.HasCheckpointTimePolicy(); err != nil {
+					if err := w.restoreContainer(c, newContainer); err != nil {
+						continue
+					}
+					if err := w.cluster.CheckpointDelete(c, filepath.Join(newContainer.Engine.DockerRootDir, "checkpoint", c.ID)); err != nil {
+						log.Errorf("Failed to delete checkpoint %s", err)
+					}
+					if checkpointTime, err := newContainer.Config.HasCheckpointTimePolicy(); err != nil {
 						log.Errorf("Fails to set container %s checkpoint time, %s", c.ID, err)
 					} else if checkpointTime > 0 {
-						if c.CheckpointTicker.Ticker == false {
-							c.CheckpointContainerTicker(checkpointTime)
+						if newContainer.CheckpointTicker.Ticker == false {
+							newContainer.CheckpointContainerTicker(checkpointTime)
 						}
 					}
 				}
@@ -107,7 +112,7 @@ func (w *Watchdog) rescheduleContainers(e *Engine) {
 	}
 }
 
-func (w *Watchdog) restoreContainer(c *Container, newContainer *Container) {
+func (w *Watchdog) restoreContainer(c *Container, newContainer *Container) error {
 	var err error
 	for version := c.CheckpointTicker.Version; version >= 0 && version >= c.CheckpointTicker.Version-2; version-- {
 		if c.CheckpointTicker.Checkpointed[version] != true {
@@ -128,8 +133,10 @@ func (w *Watchdog) restoreContainer(c *Container, newContainer *Container) {
 	if err != nil {
 		if err := w.cluster.StartContainer(newContainer, nil); err != nil {
 			log.Errorf("Failed to start rescheduled container %s: %v", newContainer.ID, err)
+			return err
 		}
 	}
+	return nil
 }
 
 // NewWatchdog creates a new watchdog

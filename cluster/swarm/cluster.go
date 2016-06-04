@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -241,6 +242,7 @@ func (c *Cluster) createContainer(config *cluster.ContainerConfig, name string, 
 
 // RemoveContainer aka Remove a container from the cluster.
 func (c *Cluster) RemoveContainer(container *cluster.Container, force, volumes bool) error {
+	container.Engine.CheckpointDelete(container.ID, filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID))
 	return container.Engine.RemoveContainer(container, force, volumes)
 }
 

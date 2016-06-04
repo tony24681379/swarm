@@ -13,6 +13,8 @@ import (
 	"time"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/docker/engine-api/types/container"
+	"github.com/docker/engine-api/types/network"
 	"github.com/docker/swarm/cluster"
 )
 
@@ -316,4 +318,67 @@ func int64ValueOrZero(r *http.Request, k string) int64 {
 
 func tagHasDigest(tag string) bool {
 	return strings.Contains(tag, ":")
+}
+
+func parseEnv(e string) (bool, string, string) {
+	parts := strings.SplitN(e, ":", 2)
+	if len(parts) == 2 {
+		return true, parts[0], parts[1]
+	}
+	return false, "", ""
+}
+
+func buildContainerConfig(c container.Config) *cluster.ContainerConfig {
+	var (
+		affinities  []string
+		constraints []string
+		env         []string
+	)
+
+	// only for tests
+	if c.Labels == nil {
+		c.Labels = make(map[string]string)
+	}
+
+	// parse affinities from labels (ex. docker run --label 'com.docker.swarm.affinities=["container==redis","image==nginx"]')
+	if labels, ok := c.Labels[cluster.SwarmLabelNamespace+".affinities"]; ok {
+		json.Unmarshal([]byte(labels), &affinities)
+	}
+
+	// parse constraints from labels (ex. docker run --label 'com.docker.swarm.constraints=["region==us-east","storage==ssd"]')
+	if labels, ok := c.Labels[cluster.SwarmLabelNamespace+".constraints"]; ok {
+		json.Unmarshal([]byte(labels), &constraints)
+	}
+
+	// parse affinities/constraints/reschedule policies from env (ex. docker run -e affinity:container==redis -e affinity:image==nginx -e constraint:region==us-east -e constraint:storage==ssd -e reschedule:off)
+	for _, e := range c.Env {
+		if ok, key, value := parseEnv(e); ok && key == "affinity" {
+			affinities = append(affinities, value)
+		} else if ok && key == "constraint" {
+			constraints = append(constraints, value)
+		} else {
+			env = append(env, e)
+		}
+	}
+	// remove affinities/constraints policies from env
+	c.Env = env
+
+	containerConfig := &cluster.ContainerConfig{
+		c,
+		container.HostConfig{},
+		network.NetworkingConfig{},
+		[]string{},
+		[]string{},
+	}
+
+	// store affinities in labels
+	if len(affinities) > 0 {
+		containerConfig.Affinities = affinities
+	}
+
+	// store constraints in labels
+	if len(constraints) > 0 {
+		containerConfig.Constraints = constraints
+	}
+	return containerConfig
 }
