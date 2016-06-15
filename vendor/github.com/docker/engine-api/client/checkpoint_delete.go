@@ -12,7 +12,7 @@ func (cli *Client) CheckpointDelete(ctx context.Context, container string, imgDi
 	if imgDir != "" {
 		query.Set("imgDir", imgDir)
 	}
-	resp, err := cli.delete(ctx, "/checkpoints/"+container+"/checkpoint", query, nil)
+	resp, err := cli.delete(ctx, "/containers/"+container+"/checkpoint", query, nil)
 	ensureReaderClosed(resp)
 	return err
 }

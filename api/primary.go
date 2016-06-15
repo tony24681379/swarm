@@ -77,6 +77,7 @@ var routes = map[string]map[string]handler{
 		"/containers/{name:.*}/attach":        proxyHijack,
 		"/containers/{name:.*}/copy":          proxyContainer,
 		"/containers/{name:.*}/exec":          postContainersExec,
+		"/containers/{name:.*}/checkpoint":    proxyContainerAndForceRefresh,
 		"/containers/{name:.*}/restore":       proxyContainerAndForceRefresh,
 		"/containers/{name:.*}/migrate":       postContainersMigrate,
 		"/exec/{execid:.*}/start":             postExecStart,
@@ -85,17 +86,16 @@ var routes = map[string]map[string]handler{
 		"/networks/{networkid:.*}/connect":    proxyNetworkConnect,
 		"/networks/{networkid:.*}/disconnect": proxyNetworkDisconnect,
 		"/volumes/create":                     postVolumesCreate,
-		"/checkpoints/{name:.*}/checkpoint":   proxyContainerAndForceRefresh,
 	},
 	"PUT": {
 		"/containers/{name:.*}/archive": proxyContainer,
 	},
 	"DELETE": {
-		"/checkpoints/{name:.*}/checkpoint": proxyContainer,
-		"/containers/{name:.*}":             deleteContainers,
-		"/images/{name:.*}":                 deleteImages,
-		"/networks/{networkid:.*}":          deleteNetworks,
-		"/volumes/{name:.*}":                deleteVolumes,
+		"/containers/{name:.*}/checkpoint": proxyContainer,
+		"/containers/{name:.*}":            deleteContainers,
+		"/images/{name:.*}":                deleteImages,
+		"/networks/{networkid:.*}":         deleteNetworks,
+		"/volumes/{name:.*}":               deleteVolumes,
 	},
 }
 
