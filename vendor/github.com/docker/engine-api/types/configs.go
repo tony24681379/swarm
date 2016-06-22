@@ -40,9 +40,12 @@ type ContainerCommitConfig struct {
 
 // CriuConfig holds configuration options passed down to libcontainer and CRIU
 type CriuConfig struct {
-	ImagesDirectory string
-	WorkDirectory   string
-	LeaveRunning    bool
+	ImagesDirectory     string
+	WorkDirectory       string
+	PrevImagesDirectory string
+	PreDump             bool
+	TrackMem            bool
+	LeaveRunning        bool
 }
 
 // MigrateFiltersConfig holds configuration options passed down to swarm filters

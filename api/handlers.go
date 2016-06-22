@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -599,7 +600,7 @@ func deleteContainers(c *context, w http.ResponseWriter, r *http.Request) {
 		httpError(w, fmt.Sprintf("Container %s not found", name), http.StatusNotFound)
 		return
 	}
-	if err := c.cluster.RemoveContainer(container, force, volumes); err != nil {
+	if err := c.cluster.RemoveContainer(container, force, volumes, true); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1368,6 +1369,17 @@ func optionsHandler(c *context, w http.ResponseWriter, r *http.Request) {
 }
 
 func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
+	clusterInfo := c.cluster.Info()
+	if nodes, err := strconv.Atoi(clusterInfo[2][1]); nodes < 2 {
+		if err != nil {
+			httpError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		nodeErr := errors.New("Swarm cluster needs at least two nodes to migrate container.")
+		httpError(w, nodeErr.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	if err := r.ParseForm(); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1378,16 +1390,6 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 	}
 	containerName := mux.Vars(r)["name"]
 	container := c.cluster.Container(containerName)
-
-	checkpointOpts := apitypes.CriuConfig{
-		ImagesDirectory: filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image"),
-		WorkDirectory:   filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image", "criu.work"),
-		LeaveRunning:    true,
-	}
-	if err := c.cluster.CheckpointCreate(container, checkpointOpts); err != nil {
-		httpError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 
 	config := container.Config
 
@@ -1406,7 +1408,31 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		config.AddConstraint(constraint)
 	}
 
-	if err := c.cluster.RemoveContainer(container, true, true); err != nil {
+	checkpointOpts := apitypes.CriuConfig{
+		ImagesDirectory: filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "pre-dump"),
+		WorkDirectory:   filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "pre-dump"),
+		PreDump:         true,
+		TrackMem:        true,
+		LeaveRunning:    true,
+	}
+	if err := c.cluster.CheckpointCreate(container, checkpointOpts); err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	checkpointOpts = apitypes.CriuConfig{
+		ImagesDirectory:     filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image"),
+		WorkDirectory:       filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image", "criu.work"),
+		PrevImagesDirectory: "../pre-dump",
+		TrackMem:            true,
+		LeaveRunning:        true,
+	}
+	if err := c.cluster.CheckpointCreate(container, checkpointOpts); err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := c.cluster.RemoveContainer(container, true, true, false); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

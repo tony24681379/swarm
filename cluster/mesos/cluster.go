@@ -213,7 +213,7 @@ func (c *Cluster) CreateContainer(config *cluster.ContainerConfig, name string, 
 }
 
 // RemoveContainer removes containers on mesos cluster
-func (c *Cluster) RemoveContainer(container *cluster.Container, force, volumes bool) error {
+func (c *Cluster) RemoveContainer(container *cluster.Container, force, volumes, checkpoint bool) error {
 	c.scheduler.Lock()
 	defer c.scheduler.Unlock()
 
