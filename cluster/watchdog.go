@@ -114,20 +114,31 @@ func (w *Watchdog) rescheduleContainers(e *Engine) {
 
 func (w *Watchdog) restoreContainer(c *Container, newContainer *Container) error {
 	var err error
-	for version := c.CheckpointTicker.Version; version >= 0 && version >= c.CheckpointTicker.Version-2; version-- {
+	keepVersion := c.CheckpointTicker.KeepVersion
+	for version := c.CheckpointTicker.Version; version >= 0 && version >= c.CheckpointTicker.Version-keepVersion; version-- {
+		preDumpVersion := c.CheckpointTicker.PreDumpVersion
 		if c.CheckpointTicker.Checkpointed[version] != true {
 			continue
 		}
-		criuOpts := types.CriuConfig{
-			ImagesDirectory: filepath.Join(newContainer.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(version), "criu.image"),
-			WorkDirectory:   filepath.Join(newContainer.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(version), "criu.image", "criu.work"),
+		imageDir := filepath.Join(newContainer.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(preDumpVersion), strconv.Itoa(version))
+		if version/keepVersion != preDumpVersion {
+			imageDir = filepath.Join(newContainer.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(preDumpVersion-1), strconv.Itoa(version))
 		}
+		log.Infof(imageDir)
+		criuOpts := types.CriuConfig{
+			ImagesDirectory: imageDir,
+			WorkDirectory:   filepath.Join(imageDir, "criu.work"),
+		}
+
 		if err = w.cluster.RestoreContainer(newContainer, criuOpts, true); err != nil {
 			log.Errorf("Failed to restore rescheduled container %s version %d: %v", newContainer.ID, version, err)
 		} else {
 			log.Infof("restore %s to %s on version %d", c.ID, newContainer.ID, version)
 			break
 		}
+	}
+	if err = w.cluster.CheckpointDelete(newContainer, filepath.Join(c.Engine.DockerRootDir, "checkpoint", c.ID)); err != nil {
+		log.Errorf("Failed to delete container %s checkpoint %v", c.ID, err)
 	}
 	//if restore fail 3 times, try to start a new container
 	if err != nil {

@@ -15,9 +15,11 @@ import (
 
 // CheckpointTicker is exported
 type CheckpointTicker struct {
-	Version      int
-	Checkpointed map[int]bool
-	Ticker       bool
+	KeepVersion    int
+	PreDumpVersion int
+	Version        int
+	Checkpointed   map[int]bool
+	Ticker         bool
 }
 
 // Container is exported
@@ -102,10 +104,13 @@ func (c *Container) CheckpointContainerTicker(checkpointTime time.Duration) {
 	var ticker = time.NewTicker(checkpointTime)
 	var stopCh = make(chan bool)
 	c.CheckpointTicker = CheckpointTicker{
-		Checkpointed: make(map[int]bool),
-		Version:      0,
-		Ticker:       true,
+		Checkpointed:   make(map[int]bool),
+		KeepVersion:    4,
+		PreDumpVersion: 0,
+		Version:        0,
+		Ticker:         true,
 	}
+	keepVersion := c.CheckpointTicker.KeepVersion
 
 	go func() {
 		c.Engine.WaitContainer(c.ID)
@@ -117,30 +122,59 @@ func (c *Container) CheckpointContainerTicker(checkpointTime time.Duration) {
 			select {
 			case <-ticker.C:
 				version := c.CheckpointTicker.Version
-				keepVersion := 2
+				preDumpVersion := c.CheckpointTicker.PreDumpVersion
 				c.CheckpointTicker.Checkpointed[version] = false
-				imgDir := filepath.Join(c.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(version), "criu.image")
+
+				if version%keepVersion == 0 {
+					imgDir := filepath.Join(c.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(preDumpVersion))
+					criuOpts := types.CriuConfig{
+						ImagesDirectory: imgDir,
+						WorkDirectory:   filepath.Join(imgDir, "criu.work"),
+						LeaveRunning:    true,
+						TrackMem:        true,
+						PreDump:         true,
+					}
+					t0 := time.Now()
+					err := c.Engine.CheckpointCreate(c.ID, criuOpts)
+					t1 := time.Now()
+					if err != nil {
+						log.Errorf("Error to create checkpoint pre-dump%s, %s", c.ID, err)
+						continue
+					} else {
+						log.Infof("%v checkpoint container pre-dump %s, pre-dump version %d", t1.Sub(t0), c.ID, preDumpVersion)
+					}
+				}
+				imgDir := filepath.Join(c.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(preDumpVersion), strconv.Itoa(version))
 
 				criuOpts := types.CriuConfig{
-					ImagesDirectory: imgDir,
-					WorkDirectory:   filepath.Join(imgDir, "criu.work"),
-					LeaveRunning:    true,
+					ImagesDirectory:     imgDir,
+					LeaveRunning:        true,
+					TrackMem:            true,
+					PrevImagesDirectory: "../" + strconv.Itoa(version-1),
+				}
+				if version%keepVersion == 0 {
+					criuOpts.PrevImagesDirectory = ".."
 				}
 
+				t0 := time.Now()
 				err := c.Engine.CheckpointCreate(c.ID, criuOpts)
+				t1 := time.Now()
 				if err != nil {
 					log.Errorf("Error to create checkpoint %s, %s", c.ID, err)
 				} else {
-					log.Infof("checkpoint container %s,  version %d", c.ID, c.CheckpointTicker.Version)
+					log.Infof("%v checkpoint container %s,  version %d", t1.Sub(t0), c.ID, c.CheckpointTicker.Version)
 				}
 				c.CheckpointTicker.Checkpointed[version] = true
-				if version >= keepVersion {
-					err := c.Engine.CheckpointDelete(c.ID, filepath.Join(c.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(version-keepVersion)))
+				if version%keepVersion == keepVersion-1 {
+					err := c.Engine.CheckpointDelete(c.ID, filepath.Join(c.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(preDumpVersion-1)))
 					if err != nil {
-						log.Errorf("Error to delete checkpoint %s version %d, %s", c.ID, version-keepVersion, err)
+						log.Errorf("Error to delete checkpoint %s preDumpVersion %d, %s", c.ID, preDumpVersion-1, err)
 					}
 				}
 				c.CheckpointTicker.Version++
+				if c.CheckpointTicker.Version%keepVersion == 0 {
+					c.CheckpointTicker.PreDumpVersion++
+				}
 			case <-stopCh:
 				ticker.Stop()
 				c.CheckpointTicker.Ticker = false
