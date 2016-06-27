@@ -1098,15 +1098,7 @@ func proxyContainerAndForceRefresh(c *context, w http.ResponseWriter, r *http.Re
 		container.Refresh()
 	}
 
-	if container.Info.State.Running {
-		if checkpointTime, err := container.Config.HasCheckpointTimePolicy(); err != nil {
-			log.Errorf("Fails to set container %s checkpoint time, %s", container.ID, err)
-		} else if checkpointTime > 0 {
-			if container.CheckpointTicker.Ticker == false {
-				container.CheckpointContainerTicker(checkpointTime)
-			}
-		}
-	}
+	container.SetupCheckpointContainer()
 
 	err = proxyAsync(container.Engine, w, r, cb)
 	container.Engine.CheckConnectionErr(err)

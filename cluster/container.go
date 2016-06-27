@@ -99,18 +99,30 @@ func (c *Container) Refresh() (*Container, error) {
 	return c.Engine.refreshContainer(c.ID, true)
 }
 
+// SetupCheckpointContainer setup container checkpoint
+func (c *Container) SetupCheckpointContainer() {
+	if c.Info.State.Running {
+		if checkpointTime, keepVersion, err := c.Config.HasCheckpointTimePolicy(); err != nil {
+			log.Errorf("Fails to set container %s checkpoint time, %s", c.ID, err)
+		} else if checkpointTime > 0 {
+			if c.CheckpointTicker.Ticker == false {
+				c.CheckpointContainerTicker(checkpointTime, keepVersion)
+			}
+		}
+	}
+}
+
 // CheckpointContainerTicker set a checkpoint ticker
-func (c *Container) CheckpointContainerTicker(checkpointTime time.Duration) {
+func (c *Container) CheckpointContainerTicker(checkpointTime time.Duration, keepVersion int) {
 	var ticker = time.NewTicker(checkpointTime)
 	var stopCh = make(chan bool)
 	c.CheckpointTicker = CheckpointTicker{
 		Checkpointed:   make(map[int]bool),
-		KeepVersion:    4,
+		KeepVersion:    keepVersion,
 		PreDumpVersion: 0,
 		Version:        0,
 		Ticker:         true,
 	}
-	keepVersion := c.CheckpointTicker.KeepVersion
 
 	go func() {
 		c.Engine.WaitContainer(c.ID)
@@ -162,7 +174,7 @@ func (c *Container) CheckpointContainerTicker(checkpointTime time.Duration) {
 				if err != nil {
 					log.Errorf("Error to create checkpoint %s, %s", c.ID, err)
 				} else {
-					log.Infof("%v checkpoint container %s,  version %d", t1.Sub(t0), c.ID, c.CheckpointTicker.Version)
+					log.Infof("%v checkpoint container %s, version %d", t1.Sub(t0), c.ID, c.CheckpointTicker.Version)
 				}
 				c.CheckpointTicker.Checkpointed[version] = true
 				if version%keepVersion == keepVersion-1 {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,6 +77,7 @@ func BuildContainerConfig(c container.Config, h container.HostConfig, n network.
 		constraints        []string
 		reschedulePolicies []string
 		checkpointTime     []string
+		keepVersion        []string
 		env                []string
 	)
 
@@ -99,9 +101,14 @@ func BuildContainerConfig(c container.Config, h container.HostConfig, n network.
 		json.Unmarshal([]byte(labels), &reschedulePolicies)
 	}
 
-	// parse checkpoint-time policy from labels (ex. docker run --label 'com.docker.swarm.reschedule-policies=on-node-failure')
+	// parse checkpoint-time policy from labels (ex. docker run --label 'com.docker.swarm.checkpoint-time=10s')
 	if labels, ok := c.Labels[SwarmLabelNamespace+".checkpoint-time"]; ok {
 		json.Unmarshal([]byte(labels), &checkpointTime)
+	}
+
+	// parse keep-version policy from labels (ex. docker run --label 'com.docker.swarm.keep-version=5')
+	if labels, ok := c.Labels[SwarmLabelNamespace+".keep-version"]; ok {
+		json.Unmarshal([]byte(labels), &keepVersion)
 	}
 
 	// parse affinities/constraints/reschedule policies from env (ex. docker run -e affinity:container==redis -e affinity:image==nginx -e constraint:region==us-east -e constraint:storage==ssd -e reschedule:off)
@@ -114,6 +121,8 @@ func BuildContainerConfig(c container.Config, h container.HostConfig, n network.
 			reschedulePolicies = append(reschedulePolicies, value)
 		} else if ok && key == "checkpoint-time" {
 			checkpointTime = append(checkpointTime, value)
+		} else if ok && key == "keep-version" {
+			keepVersion = append(keepVersion, value)
 		} else {
 			env = append(env, e)
 		}
@@ -151,6 +160,13 @@ func BuildContainerConfig(c container.Config, h container.HostConfig, n network.
 	if len(checkpointTime) > 0 {
 		if labels, err := json.Marshal(checkpointTime); err == nil {
 			c.Labels[SwarmLabelNamespace+".checkpoint-time"] = string(labels)
+		}
+	}
+
+	// store keep-version policies in labels
+	if len(keepVersion) > 0 {
+		if labels, err := json.Marshal(keepVersion); err == nil {
+			c.Labels[SwarmLabelNamespace+".keep-version"] = string(labels)
 		}
 	}
 
@@ -241,15 +257,23 @@ func (c *ContainerConfig) HasReschedulePolicy(p string) bool {
 }
 
 // HasCheckpointTimePolicy returns true if the specified policy is part of the config
-func (c *ContainerConfig) HasCheckpointTimePolicy() (checkpointTime time.Duration, err error) {
+func (c *ContainerConfig) HasCheckpointTimePolicy() (checkpointTime time.Duration, keepVersion int, err error) {
 	for _, checkpointTimePolicy := range c.extractExprs("checkpoint-time") {
 		if checkpointTime, err = time.ParseDuration(checkpointTimePolicy); err != nil {
-			return checkpointTime, err
+			return checkpointTime, 0, err
 		}
-		return checkpointTime, err
+		for _, keepVersionS := range c.extractExprs("keep-version") {
+			if keepVersion, err = strconv.Atoi(keepVersionS); err != nil {
+				return checkpointTime, 0, err
+			}
+		}
+		if keepVersion == 0 {
+			keepVersion = 5
+		}
+		return checkpointTime, keepVersion, err
 	}
 	zeroDuration, _ := time.ParseDuration("0s")
-	return zeroDuration, err
+	return zeroDuration, 0, err
 }
 
 // Validate returns an error if the config isn't valid

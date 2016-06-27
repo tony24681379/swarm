@@ -99,13 +99,7 @@ func (w *Watchdog) rescheduleContainers(e *Engine) {
 					if err := w.cluster.CheckpointDelete(c, filepath.Join(newContainer.Engine.DockerRootDir, "checkpoint", c.ID)); err != nil {
 						log.Errorf("Failed to delete checkpoint %s", err)
 					}
-					if checkpointTime, err := newContainer.Config.HasCheckpointTimePolicy(); err != nil {
-						log.Errorf("Fails to set container %s checkpoint time, %s", c.ID, err)
-					} else if checkpointTime > 0 {
-						if newContainer.CheckpointTicker.Ticker == false {
-							newContainer.CheckpointContainerTicker(checkpointTime)
-						}
-					}
+					newContainer.SetupCheckpointContainer()
 				}
 			}
 		}
@@ -150,6 +144,13 @@ func (w *Watchdog) restoreContainer(c *Container, newContainer *Container) error
 	return nil
 }
 
+func setupCheckpointForRestoreReschedule(cluster Cluster) error {
+	for _, container := range cluster.Containers() {
+		container.SetupCheckpointContainer()
+	}
+	return nil
+}
+
 // NewWatchdog creates a new watchdog
 func NewWatchdog(cluster Cluster) *Watchdog {
 	log.Debugf("Watchdog enabled")
@@ -157,5 +158,6 @@ func NewWatchdog(cluster Cluster) *Watchdog {
 		cluster: cluster,
 	}
 	cluster.RegisterEventHandler(w)
+	setupCheckpointForRestoreReschedule(cluster)
 	return w
 }
