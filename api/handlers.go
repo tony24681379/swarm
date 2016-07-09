@@ -1407,7 +1407,8 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		TrackMem:        true,
 		LeaveRunning:    true,
 	}
-	if err := c.cluster.CheckpointCreate(container, checkpointOpts); err != nil {
+	refreshDir := "/home/vargant/checkpoint"
+	if err := c.cluster.CheckpointCreate(container, checkpointOpts, refreshDir); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1419,7 +1420,7 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		TrackMem:            true,
 		LeaveRunning:        true,
 	}
-	if err := c.cluster.CheckpointCreate(container, checkpointOpts); err != nil {
+	if err := c.cluster.CheckpointCreate(container, checkpointOpts, refreshDir); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

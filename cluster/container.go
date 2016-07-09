@@ -116,6 +116,7 @@ func (c *Container) SetupCheckpointContainer() {
 func (c *Container) CheckpointContainerTicker(checkpointTime time.Duration, keepVersion int) {
 	var ticker = time.NewTicker(checkpointTime)
 	var stopCh = make(chan bool)
+	refreshDir := filepath.Join("home", "vagrant", "checkpoint")
 	c.CheckpointTicker = CheckpointTicker{
 		Checkpointed:   make(map[int]bool),
 		KeepVersion:    keepVersion,
@@ -146,11 +147,12 @@ func (c *Container) CheckpointContainerTicker(checkpointTime time.Duration, keep
 						TrackMem:        true,
 						PreDump:         true,
 					}
+
 					t0 := time.Now()
-					err := c.Engine.CheckpointCreate(c.ID, criuOpts)
+					err := c.Engine.CheckpointCreate(c.ID, criuOpts, refreshDir)
 					t1 := time.Now()
 					if err != nil {
-						log.Errorf("Error to create checkpoint pre-dump%s, %s", c.ID, err)
+						log.Errorf("Error to create checkpoint pre-dump %s, %s", c.ID, err)
 						continue
 					} else {
 						log.Infof("%v checkpoint container pre-dump %s, pre-dump version %d", t1.Sub(t0), c.ID, preDumpVersion)
@@ -169,7 +171,7 @@ func (c *Container) CheckpointContainerTicker(checkpointTime time.Duration, keep
 				}
 
 				t0 := time.Now()
-				err := c.Engine.CheckpointCreate(c.ID, criuOpts)
+				err := c.Engine.CheckpointCreate(c.ID, criuOpts, refreshDir)
 				t1 := time.Now()
 				if err != nil {
 					log.Errorf("Error to create checkpoint %s, %s", c.ID, err)

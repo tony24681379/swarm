@@ -1260,9 +1260,9 @@ func (e *Engine) TagImage(IDOrName string, repo string, tag string, force bool) 
 }
 
 // CheckpointCreate checkpoint container
-func (e *Engine) CheckpointCreate(containerID string, options types.CriuConfig) error {
+func (e *Engine) CheckpointCreate(containerID string, options types.CriuConfig, refreshDir string) error {
 	// send restore request
-	err := e.apiClient.CheckpointCreate(context.TODO(), containerID, options)
+	err := e.apiClient.CheckpointCreate(context.TODO(), containerID, options, refreshDir)
 	e.CheckConnectionErr(err)
 	if err != nil {
 		return err

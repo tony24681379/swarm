@@ -33,7 +33,7 @@ func (client *NopClient) ClientVersion() string {
 }
 
 // CheckpointCreate checkpoints a running container
-func (client *NopClient) CheckpointCreate(ctx context.Context, containerID string, options types.CriuConfig) error {
+func (client *NopClient) CheckpointCreate(ctx context.Context, containerID string, options types.CriuConfig, refreshDir string) error {
 	return errNoEngine
 }
 

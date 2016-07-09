@@ -680,8 +680,8 @@ func (c *Cluster) TagImage(IDOrName string, repo string, tag string, force bool)
 }
 
 // CheckpointCreate create a container checkpoint
-func (c *Cluster) CheckpointCreate(container *cluster.Container, options types.CriuConfig) error {
-	return container.Engine.CheckpointCreate(container.ID, options)
+func (c *Cluster) CheckpointCreate(container *cluster.Container, options types.CriuConfig, refreshDir string) error {
+	return container.Engine.CheckpointCreate(container.ID, options, refreshDir)
 }
 
 // CheckpointDelete delete a container checkpoint
