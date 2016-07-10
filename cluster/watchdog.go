@@ -96,9 +96,6 @@ func (w *Watchdog) rescheduleContainers(e *Engine) {
 					if err := w.restoreContainer(c, newContainer); err != nil {
 						continue
 					}
-					if err := w.cluster.CheckpointDelete(c, filepath.Join(newContainer.Engine.DockerRootDir, "checkpoint", c.ID)); err != nil {
-						log.Errorf("Failed to delete checkpoint %s", err)
-					}
 					newContainer.SetupCheckpointContainer()
 				}
 			}
@@ -131,8 +128,8 @@ func (w *Watchdog) restoreContainer(c *Container, newContainer *Container) error
 			break
 		}
 	}
-	if err = w.cluster.CheckpointDelete(newContainer, filepath.Join(c.Engine.DockerRootDir, "checkpoint", c.ID)); err != nil {
-		log.Errorf("Failed to delete container %s checkpoint %v", c.ID, err)
+	if deleteErr := w.cluster.CheckpointDelete(newContainer, filepath.Join(c.Engine.DockerRootDir, "checkpoint", c.ID)); deleteErr != nil {
+		log.Errorf("Failed to delete container %s checkpoint %v", c.ID, deleteErr)
 	}
 	//if restore fail 3 times, try to start a new container
 	if err != nil {
