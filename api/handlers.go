@@ -1383,6 +1383,11 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 	containerName := mux.Vars(r)["name"]
 	container := c.cluster.Container(containerName)
 
+	if err := container.Engine.RemoveContainerMap(container); err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	config := container.Config
 
 	migrateConfig := buildContainerConfig(containertypes.Config{
@@ -1400,6 +1405,23 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		config.AddConstraint(constraint)
 	}
 
+	var restoreContainer *cluster.Container
+	retryCreateTimes := 3
+	for i := 0; i < retryCreateTimes; i++ {
+		if newContainer, err := c.cluster.CreateContainer(config, containerName, nil); err != nil {
+			if i < retryCreateTimes-1 {
+				continue
+			} else {
+				httpError(w, err.Error(), http.StatusInternalServerError)
+				container.Engine.AddContainer(container)
+				return
+			}
+		} else {
+			restoreContainer = newContainer
+			break
+		}
+	}
+
 	checkpointOpts := apitypes.CriuConfig{
 		ImagesDirectory: filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "pre-dump"),
 		WorkDirectory:   filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "pre-dump"),
@@ -1409,6 +1431,8 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 	}
 	if err := c.cluster.CheckpointCreate(container, checkpointOpts); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
+		container.Engine.RemoveContainer(restoreContainer, true, false)
+		container.Engine.AddContainer(container)
 		return
 	}
 
@@ -1421,28 +1445,9 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 	}
 	if err := c.cluster.CheckpointCreate(container, checkpointOpts); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
+		container.Engine.RemoveContainer(restoreContainer, true, false)
+		container.Engine.AddContainer(container)
 		return
-	}
-
-	if err := c.cluster.RemoveContainer(container, true, true, false); err != nil {
-		httpError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	var restoreContainer *cluster.Container
-	retryCreateTimes := 3
-	for i := 0; i < retryCreateTimes; i++ {
-		if newContainer, err := c.cluster.CreateContainer(config, containerName, nil); err != nil {
-			if i < retryCreateTimes-1 {
-				continue
-			} else {
-				httpError(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		} else {
-			restoreContainer = newContainer
-			break
-		}
 	}
 
 	restoreOpts := apitypes.CriuConfig{
@@ -1450,6 +1455,13 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		WorkDirectory:   filepath.Join(restoreContainer.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image", "criu.work"),
 	}
 	if err := c.cluster.RestoreContainer(restoreContainer, restoreOpts, true); err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		container.Engine.RemoveContainer(restoreContainer, true, false)
+		container.Engine.AddContainer(container)
+		return
+	}
+
+	if err := c.cluster.RemoveContainer(container, true, true, false); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

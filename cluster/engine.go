@@ -1186,7 +1186,7 @@ func (e *Engine) addImage(image *Image) {
 }
 
 // removeContainer removes a container from the internal state.
-func (e *Engine) removeContainer(container *Container) error {
+func (e *Engine) RemoveContainerMap(container *Container) error {
 	e.Lock()
 	defer e.Unlock()
 

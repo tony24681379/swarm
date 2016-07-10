@@ -76,7 +76,7 @@ func (w *Watchdog) rescheduleContainers(e *Engine) {
 		// the old and new one will show up in docker ps.
 		// We have to do this before calling `CreateContainer`, otherwise it
 		// will abort because the name is already taken.
-		c.Engine.removeContainer(c)
+		c.Engine.RemoveContainerMap(c)
 
 		newContainer, err := w.cluster.CreateContainer(c.Config, c.Info.Name, nil)
 

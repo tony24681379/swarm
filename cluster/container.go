@@ -150,7 +150,7 @@ func (c *Container) CheckpointContainerTicker(checkpointTime time.Duration, keep
 					err := c.Engine.CheckpointCreate(c.ID, criuOpts)
 					t1 := time.Now()
 					if err != nil {
-						log.Errorf("Error to create checkpoint pre-dump%s, %s", c.ID, err)
+						log.Errorf("Error to create checkpoint pre-dump %s version %d, %s", c.ID, preDumpVersion, err)
 						continue
 					} else {
 						log.Infof("%v checkpoint container pre-dump %s, pre-dump version %d", t1.Sub(t0), c.ID, preDumpVersion)
