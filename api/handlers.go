@@ -1431,7 +1431,7 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 	}
 	if err := c.cluster.CheckpointCreate(container, checkpointOpts); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
-		container.Engine.RemoveContainer(restoreContainer, true, false)
+		c.cluster.RemoveContainer(restoreContainer, true, false, false)
 		container.Engine.AddContainer(container)
 		return
 	}
@@ -1445,7 +1445,7 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 	}
 	if err := c.cluster.CheckpointCreate(container, checkpointOpts); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
-		container.Engine.RemoveContainer(restoreContainer, true, false)
+		c.cluster.RemoveContainer(restoreContainer, true, false, false)
 		container.Engine.AddContainer(container)
 		return
 	}
@@ -1456,7 +1456,7 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 	}
 	if err := c.cluster.RestoreContainer(restoreContainer, restoreOpts, true); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
-		container.Engine.RemoveContainer(restoreContainer, true, false)
+		c.cluster.RemoveContainer(restoreContainer, true, false, false)
 		container.Engine.AddContainer(container)
 		return
 	}
