@@ -1361,6 +1361,8 @@ func optionsHandler(c *context, w http.ResponseWriter, r *http.Request) {
 }
 
 func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	t0 := time.Now()
 	clusterInfo := c.cluster.Info()
 	if nodes, err := strconv.Atoi(clusterInfo[2][1]); nodes < 2 {
 		if err != nil {
@@ -1404,7 +1406,10 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 	for _, constraint := range migrateConfig.Constraints {
 		config.AddConstraint(constraint)
 	}
+	t1 := time.Now()
+	log.Infof("%v migrate %s container prepare ", t1.Sub(t0), container.ID)
 
+	t0 = time.Now()
 	var restoreContainer *cluster.Container
 	retryCreateTimes := 3
 	for i := 0; i < retryCreateTimes; i++ {
@@ -1421,7 +1426,10 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+	t1 = time.Now()
+	log.Infof("%v migrate %s create new container %s", t1.Sub(t0), container.ID, restoreContainer.ID)
 
+	t0 = time.Now()
 	checkpointOpts := apitypes.CriuConfig{
 		ImagesDirectory: filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "pre-dump"),
 		WorkDirectory:   filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "pre-dump"),
@@ -1431,11 +1439,14 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 	}
 	if err := c.cluster.CheckpointCreate(container, checkpointOpts); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
-		container.Engine.RemoveContainer(restoreContainer, true, false)
+		c.cluster.RemoveContainer(restoreContainer, true, false, false)
 		container.Engine.AddContainer(container)
 		return
 	}
+	t1 = time.Now()
+	log.Infof("%v migrate %s create pre-dump container", t1.Sub(t0), container.ID)
 
+	t0 = time.Now()
 	checkpointOpts = apitypes.CriuConfig{
 		ImagesDirectory:     filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image"),
 		WorkDirectory:       filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image", "criu.work"),
@@ -1445,29 +1456,43 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 	}
 	if err := c.cluster.CheckpointCreate(container, checkpointOpts); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
-		container.Engine.RemoveContainer(restoreContainer, true, false)
+		c.cluster.RemoveContainer(restoreContainer, true, false, false)
 		container.Engine.AddContainer(container)
 		return
 	}
+	t1 = time.Now()
+	log.Infof("%v migrate %s create dump checkpoint container", t1.Sub(t0), container.ID)
 
+	t0 = time.Now()
 	restoreOpts := apitypes.CriuConfig{
 		ImagesDirectory: filepath.Join(restoreContainer.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image"),
 		WorkDirectory:   filepath.Join(restoreContainer.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image", "criu.work"),
 	}
 	if err := c.cluster.RestoreContainer(restoreContainer, restoreOpts, true); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
-		container.Engine.RemoveContainer(restoreContainer, true, false)
+		c.cluster.RemoveContainer(restoreContainer, true, false, false)
 		container.Engine.AddContainer(container)
 		return
 	}
+	t1 = time.Now()
+	log.Infof("%v migrate %s restore container", t1.Sub(t0), container.ID)
 
+	t0 = time.Now()
 	if err := c.cluster.RemoveContainer(container, true, true, false); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	t1 = time.Now()
+	log.Infof("%v migrate %s remove container", t1.Sub(t0), container.ID)
 
+	t0 = time.Now()
 	if err := c.cluster.CheckpointDelete(restoreContainer, filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID)); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	t1 = time.Now()
+	log.Infof("%v migrate %s delete checkpoint", t1.Sub(t0), container.ID)
+
+	end := time.Now()
+	log.Infof("%v migrate %s total", end.Sub(start), container.ID)
 }
