@@ -1466,7 +1466,7 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := c.cluster.CheckpointDelete(container, filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID)); err != nil {
+	if err := c.cluster.CheckpointDelete(restoreContainer, filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID)); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
