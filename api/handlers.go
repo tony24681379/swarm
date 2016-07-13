@@ -1407,7 +1407,7 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		config.AddConstraint(constraint)
 	}
 	t1 := time.Now()
-	log.Infof("%v migrate %s container prepare ", t1.Sub(t0), container.ID)
+	log.Infof("%v migrate %s container prepare ", t1.Sub(t0).Seconds()*float64(1000), container.ID)
 
 	t0 = time.Now()
 	var restoreContainer *cluster.Container
@@ -1427,7 +1427,7 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	t1 = time.Now()
-	log.Infof("%v migrate %s create new container %s", t1.Sub(t0), container.ID, restoreContainer.ID)
+	log.Infof("%.4f migrate %s create new container %s", t1.Sub(t0).Seconds()*float64(1000), container.ID, restoreContainer.ID)
 
 	t0 = time.Now()
 	checkpointOpts := apitypes.CriuConfig{
@@ -1444,12 +1444,12 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t1 = time.Now()
-	log.Infof("%v migrate %s create pre-dump container", t1.Sub(t0), container.ID)
+	log.Infof("%.4f migrate %s create pre-dump container", t1.Sub(t0).Seconds()*float64(1000), container.ID)
 
 	t0 = time.Now()
 	checkpointOpts = apitypes.CriuConfig{
 		ImagesDirectory:     filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image"),
-		WorkDirectory:       filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image", "criu.work"),
+		WorkDirectory:       filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image"),
 		PrevImagesDirectory: "../pre-dump",
 		TrackMem:            true,
 		LeaveRunning:        true,
@@ -1461,12 +1461,12 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t1 = time.Now()
-	log.Infof("%v migrate %s create dump checkpoint container", t1.Sub(t0), container.ID)
+	log.Infof("%.4f migrate %s create dump checkpoint container", t1.Sub(t0).Seconds()*float64(1000), container.ID)
 
 	t0 = time.Now()
 	restoreOpts := apitypes.CriuConfig{
 		ImagesDirectory: filepath.Join(restoreContainer.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image"),
-		WorkDirectory:   filepath.Join(restoreContainer.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image", "criu.work"),
+		WorkDirectory:   filepath.Join(restoreContainer.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image"),
 	}
 	if err := c.cluster.RestoreContainer(restoreContainer, restoreOpts, true); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
@@ -1475,7 +1475,7 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t1 = time.Now()
-	log.Infof("%v migrate %s restore container", t1.Sub(t0), container.ID)
+	log.Infof("%.4f migrate %s restore container", t1.Sub(t0).Seconds()*float64(1000), container.ID)
 
 	t0 = time.Now()
 	if err := c.cluster.RemoveContainer(container, true, true, false); err != nil {
@@ -1483,7 +1483,7 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t1 = time.Now()
-	log.Infof("%v migrate %s remove container", t1.Sub(t0), container.ID)
+	log.Infof("%.4f migrate %s remove container", t1.Sub(t0).Seconds()*float64(1000), container.ID)
 
 	t0 = time.Now()
 	if err := c.cluster.CheckpointDelete(restoreContainer, filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID)); err != nil {
@@ -1491,8 +1491,8 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t1 = time.Now()
-	log.Infof("%v migrate %s delete checkpoint", t1.Sub(t0), container.ID)
+	log.Infof("%.4f migrate %s delete checkpoint", t1.Sub(t0).Seconds()*float64(1000), container.ID)
 
 	end := time.Now()
-	log.Infof("%v migrate %s total", end.Sub(start), container.ID)
+	log.Infof("%.4f migrate %s total", end.Sub(start).Seconds()*float64(1000), container.ID)
 }

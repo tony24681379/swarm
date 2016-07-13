@@ -174,7 +174,7 @@ func (c *Container) CheckpointContainerTicker(checkpointTime time.Duration, keep
 				if err != nil {
 					log.Errorf("Error to create checkpoint %s, %s", c.ID, err)
 				} else {
-					log.Infof("%v checkpoint container %s, version %d", t1.Sub(t0), c.ID, c.CheckpointTicker.Version)
+					log.Infof("%v checkpoint container dump %s, version %d", t1.Sub(t0), c.ID, c.CheckpointTicker.Version)
 				}
 				c.CheckpointTicker.Checkpointed[version] = true
 				if version%keepVersion == keepVersion-1 {
