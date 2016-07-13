@@ -13,7 +13,7 @@ type Cluster interface {
 	CreateContainer(config *ContainerConfig, name string, authConfig *types.AuthConfig) (*Container, error)
 
 	// Remove a container
-	RemoveContainer(container *Container, force, volumes bool) error
+	RemoveContainer(container *Container, force, volumes, checkpoint bool) error
 
 	// Return all images
 	Images() Images

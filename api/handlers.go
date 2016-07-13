@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -599,7 +600,7 @@ func deleteContainers(c *context, w http.ResponseWriter, r *http.Request) {
 		httpError(w, fmt.Sprintf("Container %s not found", name), http.StatusNotFound)
 		return
 	}
-	if err := c.cluster.RemoveContainer(container, force, volumes); err != nil {
+	if err := c.cluster.RemoveContainer(container, force, volumes, true); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1097,15 +1098,7 @@ func proxyContainerAndForceRefresh(c *context, w http.ResponseWriter, r *http.Re
 		container.Refresh()
 	}
 
-	if container.Info.State.Running {
-		if checkpointTime, err := container.Config.HasCheckpointTimePolicy(); err != nil {
-			log.Errorf("Fails to set container %s checkpoint time, %s", container.ID, err)
-		} else if checkpointTime > 0 {
-			if container.CheckpointTicker.Ticker == false {
-				container.CheckpointContainerTicker(checkpointTime)
-			}
-		}
-	}
+	container.SetupCheckpointContainer()
 
 	err = proxyAsync(container.Engine, w, r, cb)
 	container.Engine.CheckConnectionErr(err)
@@ -1368,6 +1361,19 @@ func optionsHandler(c *context, w http.ResponseWriter, r *http.Request) {
 }
 
 func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	t0 := time.Now()
+	clusterInfo := c.cluster.Info()
+	if nodes, err := strconv.Atoi(clusterInfo[2][1]); nodes < 2 {
+		if err != nil {
+			httpError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		nodeErr := errors.New("Swarm cluster needs at least two nodes to migrate container.")
+		httpError(w, nodeErr.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	if err := r.ParseForm(); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1379,12 +1385,7 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 	containerName := mux.Vars(r)["name"]
 	container := c.cluster.Container(containerName)
 
-	checkpointOpts := apitypes.CriuConfig{
-		ImagesDirectory: filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image"),
-		WorkDirectory:   filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image", "criu.work"),
-		LeaveRunning:    true,
-	}
-	if err := c.cluster.CheckpointCreate(container, checkpointOpts); err != nil {
+	if err := container.Engine.RemoveContainerMap(container); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1405,12 +1406,10 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 	for _, constraint := range migrateConfig.Constraints {
 		config.AddConstraint(constraint)
 	}
+	t1 := time.Now()
+	log.Infof("%v migrate %s container prepare ", t1.Sub(t0).Seconds()*float64(1000), container.ID)
 
-	if err := c.cluster.RemoveContainer(container, true, true); err != nil {
-		httpError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
+	t0 = time.Now()
 	var restoreContainer *cluster.Container
 	retryCreateTimes := 3
 	for i := 0; i < retryCreateTimes; i++ {
@@ -1419,6 +1418,7 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 				continue
 			} else {
 				httpError(w, err.Error(), http.StatusInternalServerError)
+				container.Engine.AddContainer(container)
 				return
 			}
 		} else {
@@ -1426,18 +1426,54 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+	t1 = time.Now()
+	log.Infof("%.4f migrate %s create new container %s", t1.Sub(t0).Seconds()*float64(1000), container.ID, restoreContainer.ID)
 
+	t0 = time.Now()
+	checkpointOpts := apitypes.CriuConfig{
+		ImagesDirectory: filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image"),
+		WorkDirectory:   filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image"),
+		LeaveRunning:    true,
+	}
+	if err := c.cluster.CheckpointCreate(container, checkpointOpts); err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		c.cluster.RemoveContainer(restoreContainer, true, false, false)
+		container.Engine.AddContainer(container)
+		return
+	}
+	t1 = time.Now()
+	log.Infof("%.4f migrate %s create dump checkpoint container", t1.Sub(t0).Seconds()*float64(1000), container.ID)
+
+	t0 = time.Now()
 	restoreOpts := apitypes.CriuConfig{
 		ImagesDirectory: filepath.Join(restoreContainer.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image"),
-		WorkDirectory:   filepath.Join(restoreContainer.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image", "criu.work"),
+		WorkDirectory:   filepath.Join(restoreContainer.Engine.DockerRootDir, "checkpoint", container.ID, "migrate", "criu.image"),
 	}
 	if err := c.cluster.RestoreContainer(restoreContainer, restoreOpts, true); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
+		c.cluster.RemoveContainer(restoreContainer, true, false, false)
+		container.Engine.AddContainer(container)
 		return
 	}
+	t1 = time.Now()
+	log.Infof("%.4f migrate %s restore container", t1.Sub(t0).Seconds()*float64(1000), container.ID)
 
-	if err := c.cluster.CheckpointDelete(container, filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID)); err != nil {
+	t0 = time.Now()
+	if err := c.cluster.RemoveContainer(container, true, true, false); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	t1 = time.Now()
+	log.Infof("%.4f migrate %s remove container", t1.Sub(t0).Seconds()*float64(1000), container.ID)
+
+	t0 = time.Now()
+	if err := c.cluster.CheckpointDelete(restoreContainer, filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID)); err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	t1 = time.Now()
+	log.Infof("%.4f migrate %s delete checkpoint", t1.Sub(t0).Seconds()*float64(1000), container.ID)
+
+	end := time.Now()
+	log.Infof("%.4f migrate %s total", end.Sub(start).Seconds()*float64(1000), container.ID)
 }

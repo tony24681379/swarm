@@ -141,14 +141,7 @@ func (c *Cluster) generateUniqueID() string {
 // StartContainer starts a container
 func (c *Cluster) StartContainer(container *cluster.Container, hostConfig *dockerclient.HostConfig) error {
 	startContainer := container.Engine.StartContainer(container.ID, hostConfig)
-
-	if checkpointTime, err := container.Config.HasCheckpointTimePolicy(); err != nil {
-		log.Errorf("Fails to set container %s checkpoint time, %s", container.ID, err)
-	} else if checkpointTime > 0 {
-		if container.CheckpointTicker.Ticker == false {
-			container.CheckpointContainerTicker(checkpointTime)
-		}
-	}
+	container.SetupCheckpointContainer()
 
 	return startContainer
 }
@@ -241,7 +234,11 @@ func (c *Cluster) createContainer(config *cluster.ContainerConfig, name string, 
 }
 
 // RemoveContainer aka Remove a container from the cluster.
-func (c *Cluster) RemoveContainer(container *cluster.Container, force, volumes bool) error {
+func (c *Cluster) RemoveContainer(container *cluster.Container, force, volumes, checkpoint bool) error {
+	container.Engine.CheckpointDelete(container.ID, filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID))
+	if checkpoint {
+		container.Engine.CheckpointDelete(container.ID, filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID))
+	}
 	container.Engine.CheckpointDelete(container.ID, filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID))
 	return container.Engine.RemoveContainer(container, force, volumes)
 }
@@ -992,5 +989,8 @@ func (c *Cluster) CheckpointDelete(container *cluster.Container, imgDir string) 
 
 // RestoreContainer restore a container
 func (c *Cluster) RestoreContainer(container *cluster.Container, options types.CriuConfig, forceRestore bool) error {
-	return container.Engine.RestoreContainer(container.ID, options, forceRestore)
+	restoreContainer := container.Engine.RestoreContainer(container.ID, options, forceRestore)
+	container.SetupCheckpointContainer()
+
+	return restoreContainer
 }
