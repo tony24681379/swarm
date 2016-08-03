@@ -153,7 +153,7 @@ func (c *Container) CheckpointContainerTicker(checkpointTime time.Duration, keep
 						log.Errorf("Error to create checkpoint pre-dump %s version %d, %s", c.ID, preDumpVersion, err)
 						continue
 					} else {
-						log.Infof("%v checkpoint container pre-dump %s, pre-dump version %d", t1.Sub(t0), c.ID, preDumpVersion)
+						log.Infof("%4f checkpoint container pre-dump %s, pre-dump version %d", t1.Sub(t0).Seconds()*float64(1000), c.ID, preDumpVersion)
 					}
 				}
 				imgDir := filepath.Join(c.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(preDumpVersion), strconv.Itoa(version))
@@ -174,7 +174,7 @@ func (c *Container) CheckpointContainerTicker(checkpointTime time.Duration, keep
 				if err != nil {
 					log.Errorf("Error to create checkpoint %s, %s", c.ID, err)
 				} else {
-					log.Infof("%v checkpoint container dump %s, version %d", t1.Sub(t0), c.ID, c.CheckpointTicker.Version)
+					log.Infof("%4f checkpoint container dump %s, version %d", t1.Sub(t0).Seconds()*float64(1000), c.ID, c.CheckpointTicker.Version)
 				}
 				c.CheckpointTicker.Checkpointed[version] = true
 				if version%keepVersion == keepVersion-1 {
