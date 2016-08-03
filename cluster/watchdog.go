@@ -1,9 +1,11 @@
 package cluster
 
 import (
+	"container/heap"
 	"path/filepath"
 	"strconv"
 	"sync"
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/docker/engine-api/types"
@@ -148,6 +150,8 @@ func setupCheckpointForRestoreReschedule(cluster Cluster) error {
 	return nil
 }
 
+var checkpointQueue PriorityQueue
+
 // NewWatchdog creates a new watchdog
 func NewWatchdog(cluster Cluster) *Watchdog {
 	log.Debugf("Watchdog enabled")
@@ -156,5 +160,41 @@ func NewWatchdog(cluster Cluster) *Watchdog {
 	}
 	cluster.RegisterEventHandler(w)
 	setupCheckpointForRestoreReschedule(cluster)
+	checkpointQueue = make(PriorityQueue, 0)
+	heap.Init(&checkpointQueue)
+
+	go func() {
+		for {
+			if checkpointQueue.Len() > 0 {
+				item := heap.Pop(&checkpointQueue).(*Item)
+
+				if item.IsDelete {
+					t0 := time.Now()
+					err := item.C.Engine.CheckpointDelete(item.C.ID, item.CriuOpts.ImagesDirectory)
+					t1 := time.Now()
+					if err != nil {
+						log.Errorf("%.4f Error to delete checkpoint %s preDumpVersion %d, %s", t1.Sub(t0).Seconds()*float64(1000), item.C.ID, item.Version, err)
+					} else {
+						log.Infof("%.4f delete checkpoint container %s, version %d", t1.Sub(t0).Seconds()*float64(1000), item.C.ID, item.Version)
+					}
+				} else {
+					predumpString := ""
+					if item.IsPreDump {
+						predumpString = "pre-dump"
+					}
+					t0 := time.Now()
+					err := item.C.Engine.CheckpointCreate(item.C.ID, item.CriuOpts)
+					t1 := time.Now()
+					if err != nil {
+						log.Errorf("Error to create %s checkpoint %s version %d, %s", predumpString, item.C.ID, item.Version, err)
+					} else {
+						log.Infof("%.4f %s checkpoint container %s, version %d", t1.Sub(t0).Seconds()*float64(1000), predumpString, item.C.ID, item.Version)
+					}
+				}
+			} else {
+				time.Sleep(1 * time.Second)
+			}
+		}
+	}()
 	return w
 }

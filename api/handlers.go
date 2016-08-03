@@ -600,11 +600,11 @@ func deleteContainers(c *context, w http.ResponseWriter, r *http.Request) {
 		httpError(w, fmt.Sprintf("Container %s not found", name), http.StatusNotFound)
 		return
 	}
-	if err := c.cluster.RemoveContainer(container, force, volumes, true); err != nil {
+	if err := c.cluster.CheckpointDelete(container, filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID)); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := c.cluster.CheckpointDelete(container, filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID)); err != nil {
+	if err := c.cluster.RemoveContainer(container, force, volumes, true); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1407,7 +1407,7 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		config.AddConstraint(constraint)
 	}
 	t1 := time.Now()
-	log.Infof("%v migrate %s container prepare ", t1.Sub(t0), container.ID)
+	log.Infof("%.4f migrate %s container prepare ", t1.Sub(t0).Seconds()*float64(1000), container.ID)
 
 	t0 = time.Now()
 	var restoreContainer *cluster.Container
@@ -1427,7 +1427,7 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	t1 = time.Now()
-	log.Infof("%v migrate %s create new container %s", t1.Sub(t0), container.ID, restoreContainer.ID)
+	log.Infof("%.4f migrate %s create new container %s", t1.Sub(t0).Seconds()*float64(1000), container.ID, restoreContainer.ID)
 
 	t0 = time.Now()
 	checkpointOpts := apitypes.CriuConfig{
@@ -1444,7 +1444,7 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t1 = time.Now()
-	log.Infof("%v migrate %s create pre-dump container", t1.Sub(t0), container.ID)
+	log.Infof("%.4f migrate %s create pre-dump container", t1.Sub(t0).Seconds()*float64(1000), container.ID)
 
 	t0 = time.Now()
 	checkpointOpts = apitypes.CriuConfig{
@@ -1461,7 +1461,15 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t1 = time.Now()
-	log.Infof("%v migrate %s create dump checkpoint container", t1.Sub(t0), container.ID)
+	log.Infof("%.4f migrate %s create dump checkpoint container", t1.Sub(t0).Seconds()*float64(1000), container.ID)
+
+	t0 = time.Now()
+	if err := c.cluster.RemoveContainer(container, true, true, false); err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	t1 = time.Now()
+	log.Infof("%.4f migrate %s remove container", t1.Sub(t0).Seconds()*float64(1000), container.ID)
 
 	t0 = time.Now()
 	restoreOpts := apitypes.CriuConfig{
@@ -1475,15 +1483,7 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t1 = time.Now()
-	log.Infof("%v migrate %s restore container", t1.Sub(t0), container.ID)
-
-	t0 = time.Now()
-	if err := c.cluster.RemoveContainer(container, true, true, false); err != nil {
-		httpError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	t1 = time.Now()
-	log.Infof("%v migrate %s remove container", t1.Sub(t0), container.ID)
+	log.Infof("%.4f migrate %s restore container", t1.Sub(t0).Seconds()*float64(1000), container.ID)
 
 	t0 = time.Now()
 	if err := c.cluster.CheckpointDelete(restoreContainer, filepath.Join(container.Engine.DockerRootDir, "checkpoint", container.ID)); err != nil {
@@ -1491,8 +1491,8 @@ func postContainersMigrate(c *context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t1 = time.Now()
-	log.Infof("%v migrate %s delete checkpoint", t1.Sub(t0), container.ID)
+	log.Infof("%.4f migrate %s delete checkpoint", t1.Sub(t0).Seconds()*float64(1000), container.ID)
 
 	end := time.Now()
-	log.Infof("%v migrate %s total", end.Sub(start), container.ID)
+	log.Infof("%.4f migrate %s total", end.Sub(start).Seconds()*float64(1000), container.ID)
 }

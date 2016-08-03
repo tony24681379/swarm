@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"container/heap"
+
 	log "github.com/Sirupsen/logrus"
 	"github.com/docker/docker/pkg/stringid"
 	"github.com/docker/engine-api/types"
@@ -146,15 +148,14 @@ func (c *Container) CheckpointContainerTicker(checkpointTime time.Duration, keep
 						TrackMem:        true,
 						PreDump:         true,
 					}
-					t0 := time.Now()
-					err := c.Engine.CheckpointCreate(c.ID, criuOpts)
-					t1 := time.Now()
-					if err != nil {
-						log.Errorf("Error to create checkpoint pre-dump %s version %d, %s", c.ID, preDumpVersion, err)
-						continue
-					} else {
-						log.Infof("%v checkpoint container pre-dump %s, pre-dump version %d", t1.Sub(t0), c.ID, preDumpVersion)
+					item := &Item{
+						C:         c,
+						CriuOpts:  criuOpts,
+						Version:   version,
+						priority:  1,
+						IsPreDump: true,
 					}
+					heap.Push(&checkpointQueue, item)
 				}
 				imgDir := filepath.Join(c.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(preDumpVersion), strconv.Itoa(version))
 
@@ -168,20 +169,27 @@ func (c *Container) CheckpointContainerTicker(checkpointTime time.Duration, keep
 					criuOpts.PrevImagesDirectory = ".."
 				}
 
-				t0 := time.Now()
-				err := c.Engine.CheckpointCreate(c.ID, criuOpts)
-				t1 := time.Now()
-				if err != nil {
-					log.Errorf("Error to create checkpoint %s, %s", c.ID, err)
-				} else {
-					log.Infof("%v checkpoint container %s, version %d", t1.Sub(t0), c.ID, c.CheckpointTicker.Version)
+				item := &Item{
+					C:        c,
+					CriuOpts: criuOpts,
+					Version:  version,
+					priority: 1,
 				}
+				heap.Push(&checkpointQueue, item)
+
 				c.CheckpointTicker.Checkpointed[version] = true
 				if version%keepVersion == keepVersion-1 {
-					err := c.Engine.CheckpointDelete(c.ID, filepath.Join(c.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(preDumpVersion-1)))
-					if err != nil {
-						log.Errorf("Error to delete checkpoint %s preDumpVersion %d, %s", c.ID, preDumpVersion-1, err)
+					criuOpts := types.CriuConfig{
+						ImagesDirectory: filepath.Join(c.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(preDumpVersion-1)),
 					}
+					item := &Item{
+						C:        c,
+						CriuOpts: criuOpts,
+						IsDelete: true,
+						Version:  preDumpVersion - 1,
+						priority: 1,
+					}
+					heap.Push(&checkpointQueue, item)
 				}
 				c.CheckpointTicker.Version++
 				if c.CheckpointTicker.Version%keepVersion == 0 {
@@ -195,6 +203,55 @@ func (c *Container) CheckpointContainerTicker(checkpointTime time.Duration, keep
 			}
 		}
 	}()
+}
+
+// An Item is something we manage in a priority queue.
+type Item struct {
+	C         *Container
+	CriuOpts  types.CriuConfig
+	IsPreDump bool
+	Version   int
+	IsDelete  bool
+	priority  int
+	index     int
+}
+
+// A PriorityQueue implements heap.Interface and holds Items.
+type PriorityQueue []*Item
+
+func (pq PriorityQueue) Len() int { return len(pq) }
+
+func (pq PriorityQueue) Less(i, j int) bool {
+	// We want Pop to give us the highest, not lowest, priority so we use greater than here.
+	return pq[i].priority > pq[j].priority
+}
+
+func (pq PriorityQueue) Swap(i, j int) {
+	pq[i], pq[j] = pq[j], pq[i]
+	pq[i].index = i
+	pq[j].index = j
+}
+
+func (pq *PriorityQueue) Push(x interface{}) {
+	n := len(*pq)
+	item := x.(*Item)
+	item.index = n
+	*pq = append(*pq, item)
+}
+
+func (pq *PriorityQueue) Pop() interface{} {
+	old := *pq
+	n := len(old)
+	item := old[n-1]
+	item.index = -1 // for safety
+	*pq = old[0 : n-1]
+	return item
+}
+
+// update modifies the priority of an Item in the queue.
+func (pq *PriorityQueue) update(item *Item, priority int) {
+	item.priority = priority
+	heap.Fix(pq, item.index)
 }
 
 // Containers represents a list of containers
