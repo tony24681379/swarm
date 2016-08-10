@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"container/heap"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -150,7 +149,7 @@ func setupCheckpointForRestoreReschedule(cluster Cluster) error {
 	return nil
 }
 
-var checkpointQueue PriorityQueue
+var checkpointQueue *Queue
 
 // NewWatchdog creates a new watchdog
 func NewWatchdog(cluster Cluster) *Watchdog {
@@ -160,13 +159,12 @@ func NewWatchdog(cluster Cluster) *Watchdog {
 	}
 	cluster.RegisterEventHandler(w)
 	setupCheckpointForRestoreReschedule(cluster)
-	checkpointQueue = make(PriorityQueue, 0)
-	heap.Init(&checkpointQueue)
+	checkpointQueue = NewQueue(1)
 
 	go func() {
 		for {
 			if checkpointQueue.Len() > 0 {
-				item := heap.Pop(&checkpointQueue).(*Item)
+				item := checkpointQueue.Pop()
 
 				if item.IsDelete {
 					t0 := time.Now()

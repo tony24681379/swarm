@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"container/heap"
-
 	log "github.com/Sirupsen/logrus"
 	"github.com/docker/docker/pkg/stringid"
 	"github.com/docker/engine-api/types"
@@ -151,11 +149,10 @@ func (c *Container) CheckpointContainerTicker(checkpointTime time.Duration, keep
 					item := &Item{
 						C:         c,
 						CriuOpts:  criuOpts,
-						Version:   version,
-						priority:  1,
+						Version:   preDumpVersion,
 						IsPreDump: true,
 					}
-					heap.Push(&checkpointQueue, item)
+					checkpointQueue.Push(item)
 				}
 				imgDir := filepath.Join(c.Engine.DockerRootDir, "checkpoint", c.ID, strconv.Itoa(preDumpVersion), strconv.Itoa(version))
 
@@ -173,9 +170,8 @@ func (c *Container) CheckpointContainerTicker(checkpointTime time.Duration, keep
 					C:        c,
 					CriuOpts: criuOpts,
 					Version:  version,
-					priority: 1,
 				}
-				heap.Push(&checkpointQueue, item)
+				checkpointQueue.Push(item)
 
 				c.CheckpointTicker.Checkpointed[version] = true
 				if version%keepVersion == keepVersion-1 {
@@ -187,9 +183,8 @@ func (c *Container) CheckpointContainerTicker(checkpointTime time.Duration, keep
 						CriuOpts: criuOpts,
 						IsDelete: true,
 						Version:  preDumpVersion - 1,
-						priority: 1,
 					}
-					heap.Push(&checkpointQueue, item)
+					checkpointQueue.Push(item)
 				}
 				c.CheckpointTicker.Version++
 				if c.CheckpointTicker.Version%keepVersion == 0 {
@@ -212,47 +207,53 @@ type Item struct {
 	IsPreDump bool
 	Version   int
 	IsDelete  bool
-	priority  int
 	index     int
 }
 
-// A PriorityQueue implements heap.Interface and holds Items.
-type PriorityQueue []*Item
-
-func (pq PriorityQueue) Len() int { return len(pq) }
-
-func (pq PriorityQueue) Less(i, j int) bool {
-	// We want Pop to give us the highest, not lowest, priority so we use greater than here.
-	return pq[i].priority > pq[j].priority
+// NewQueue returns a new queue with the given initial size.
+func NewQueue(size int) *Queue {
+	return &Queue{
+		nodes: make([]*Item, size),
+		size:  size,
+	}
 }
 
-func (pq PriorityQueue) Swap(i, j int) {
-	pq[i], pq[j] = pq[j], pq[i]
-	pq[i].index = i
-	pq[j].index = j
+// Queue is a basic FIFO queue based on a circular list that resizes as needed.
+type Queue struct {
+	nodes []*Item
+	size  int
+	head  int
+	tail  int
+	count int
 }
 
-func (pq *PriorityQueue) Push(x interface{}) {
-	n := len(*pq)
-	item := x.(*Item)
-	item.index = n
-	*pq = append(*pq, item)
+// Push adds a node to the queue.
+func (q *Queue) Push(n *Item) {
+	if q.head == q.tail && q.count > 0 {
+		nodes := make([]*Item, len(q.nodes)+q.size)
+		copy(nodes, q.nodes[q.head:])
+		copy(nodes[len(q.nodes)-q.head:], q.nodes[:q.head])
+		q.head = 0
+		q.tail = len(q.nodes)
+		q.nodes = nodes
+	}
+	q.nodes[q.tail] = n
+	q.tail = (q.tail + 1) % len(q.nodes)
+	q.count++
 }
 
-func (pq *PriorityQueue) Pop() interface{} {
-	old := *pq
-	n := len(old)
-	item := old[n-1]
-	item.index = -1 // for safety
-	*pq = old[0 : n-1]
-	return item
+// Pop removes and returns a node from the queue in first to last order.
+func (q *Queue) Pop() *Item {
+	if q.count == 0 {
+		return nil
+	}
+	node := q.nodes[q.head]
+	q.head = (q.head + 1) % len(q.nodes)
+	q.count--
+	return node
 }
 
-// update modifies the priority of an Item in the queue.
-func (pq *PriorityQueue) update(item *Item, priority int) {
-	item.priority = priority
-	heap.Fix(pq, item.index)
-}
+func (q *Queue) Len() int { return q.count }
 
 // Containers represents a list of containers
 type Containers []*Container
